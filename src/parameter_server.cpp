@@ -3,16 +3,16 @@
 #include <algorithm>
 #include <numeric>
 
-parameter_server::parameter_server(int total_workers) : total_workers_(total_workers), current_iteration_(0) {}
+ParameterServerCore::ParameterServerCore(int total_workers) : total_workers_(total_workers), current_iteration_(0) {}
 
-parameter_server::~parameter_server() {}
+ParameterServerCore::~ParameterServerCore() {}
 
-void parameter_server::initialize_parameters(const std::vector<tensor>& initial_params) {
+void ParameterServerCore::initialize_parameters(const std::vector<tensor>& initial_params) {
   std::lock_guard<std::mutex> lock(params_mutex_);
   parameters_ = initial_params;
 }
 
-bool parameter_server::receive_gradients(int32_t worker_id, int32_t iteration,const std::vector<tensor>& gradients) {
+bool ParameterServerCore::receive_gradients(int32_t worker_id, int32_t iteration,const std::vector<tensor>& gradients) {
   
     std::lock_guard<std::mutex> lock(state_mutex_);
   
@@ -52,7 +52,7 @@ bool parameter_server::receive_gradients(int32_t worker_id, int32_t iteration,co
     
         {
         std::lock_guard<std::mutex> params_lock(params_mutex_);
-        aggregate_gradients(aggregated);
+        ParameterServerCore::aggregate_gradients(aggregated);
         }
     
     state.aggregated = true;
@@ -62,7 +62,7 @@ bool parameter_server::receive_gradients(int32_t worker_id, int32_t iteration,co
   return false;
 }
 
-void parameter_server::aggregate_gradients(const std::vector<tensor>& gradients) {
+void ParameterServerCore::aggregate_gradients(const std::vector<tensor>& gradients) {
   if (parameters_.empty()) {
     parameters_ = gradients;
     return;
@@ -78,13 +78,13 @@ void parameter_server::aggregate_gradients(const std::vector<tensor>& gradients)
   }
 }
 
-std::vector<tensor> parameter_server::serve_parameters(int32_t iteration) {
+std::vector<tensor> ParameterServerCore::serve_parameters(int32_t iteration) {
   std::lock_guard<std::mutex> lock(params_mutex_);
   std::vector<tensor> result = parameters_;
   return result;
 }
 
-bool parameter_server::check_sync_status(int32_t iteration, int32_t& workers_received) {
+bool ParameterServerCore::check_sync_status(int32_t iteration, int32_t& workers_received) {
   std::lock_guard<std::mutex> lock(state_mutex_);
   
   auto it = iteration_states_.find(iteration);

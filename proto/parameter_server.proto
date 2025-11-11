@@ -3,8 +3,8 @@ syntax = "proto3";
 package parameter_server;
 
 service ParameterServer {
-  rpc PushGradients(GradientUpdate) returns (PushResponse);
-  rpc PullParameters(PullRequest) returns (ParameterUpdate);
+  rpc ReceiveGradients(GradientUpdate) returns (PushResponse);
+  rpc ServeParameters(PullRequest) returns (ParameterUpdate);
   rpc CheckSyncStatus(SyncStatusRequest) returns (SyncStatusResponse);
 }
 

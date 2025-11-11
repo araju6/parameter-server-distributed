@@ -14,11 +14,11 @@ struct tensor {
 };
 
 // Central parameter server that coordinates distributed training.
-class parameter_server {
+class ParameterServerCore {
   public:
   
-    parameter_server(int total_workers);
-    ~parameter_server();
+    ParameterServerCore(int total_workers);
+    ~ParameterServerCore();
 
     void initialize_parameters(const std::vector<tensor>& initial_params);
     
