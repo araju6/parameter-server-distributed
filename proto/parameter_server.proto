@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package parameter_server;
+
+service ParameterServer {
+  rpc PushGradients(GradientUpdate) returns (PushResponse);
+  rpc PullParameters(PullRequest) returns (ParameterUpdate);
+  rpc CheckSyncStatus(SyncStatusRequest) returns (SyncStatusResponse);
+}
+
+message GradientUpdate {
+  int32 worker_id = 1;
+  int32 iteration = 2;
+  repeated Tensor gradients = 3;
+}
+
+message Tensor {
+  string name = 1;
+  repeated int32 shape = 2;
+  repeated float data = 3;
+  int32 dtype = 4;  // 0=float32, 1=float64
+}
+
+message PushResponse {
+  bool success = 1;
+  string message = 2;
+  int32 iteration = 3;
+  bool aggregation_complete = 4;  // true when all workers have pushed for this iteration
+  int32 workers_received = 5;
+  int32 total_workers = 6;
+}
+
+message PullRequest {
+  int32 worker_id = 1;
+  int32 iteration = 2;
+}
+
+message ParameterUpdate {
+  int32 iteration = 1;
+  repeated Tensor parameters = 2;
+  bool ready = 3;  // true if parameters are updated for requested iteration
+}
+
+message SyncStatusRequest {
+  int32 iteration = 1;
+}
+
+message SyncStatusResponse {
+  int32 iteration = 1;
+  bool ready = 2;
+  int32 workers_received = 3;
+  int32 total_workers = 4;
+}

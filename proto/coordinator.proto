@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package coordinator;
+
+service Coordinator {
+  rpc RegisterWorker(WorkerInfo) returns (RegisterResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc ListWorkers(ListWorkersRequest) returns (ListWorkersResponse);
+  rpc GetParameterServerAddress(GetPSAddressRequest) returns (GetPSAddressResponse);
+}
+
+message WorkerInfo {
+  int32 worker_id = 1;
+  string address = 2;
+  int32 port = 3;
+  string hostname = 4;
+}
+
+message RegisterResponse {
+  bool success = 1;
+  string message = 2;
+  string parameter_server_address = 3;
+  int32 total_workers = 4;  // total registered workers (for sync coordination)
+}
+
+message HeartbeatRequest {
+  int32 worker_id = 1;
+  WorkerStatus status = 2;
+}
+
+enum WorkerStatus {
+  IDLE = 0;
+  TRAINING = 1;
+  CHECKPOINTING = 2;
+  ERROR = 3;
+}
+
+message HeartbeatResponse {
+  bool success = 1;
+  int64 timestamp = 2;
+}
+
+message ListWorkersRequest {
+  // empty request
+}
+
+message ListWorkersResponse {
+  repeated WorkerInfo workers = 1;
+  int32 total_workers = 2;
+}
+
+message GetPSAddressRequest {
+  // empty request
+}
+
+message GetPSAddressResponse {
+  string address = 1;
+  int32 port = 2;
+}
