@@ -8,21 +8,13 @@ using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
-using parameter_server::ParameterServer;
-using parameter_server::GradientUpdate;
-using parameter_server::PushResponse;
-using parameter_server::PullRequest;
-using parameter_server::ParameterUpdate;
-using parameter_server::Tensor;
-using parameter_server::SyncStatusRequest;
-using parameter_server::SyncStatusResponse;
 
-class parameter_server_service_impl final : public ParameterServer::Service {
+class parameter_server_service_impl final : public parameter_server::ParameterServer::Service {
 
   public:
     parameter_server_service_impl(int total_workers): ps_(total_workers) {}
 
-    Status ReceiveGradients(ServerContext* context, const GradientUpdate* request,PushResponse* response) override {
+    Status PushGradients(ServerContext* context, const parameter_server::GradientUpdate* request, parameter_server::PushResponse* response) override {
       std::vector<tensor> gradients;
       
       for (const auto& proto_tensor : request->gradients()) {
@@ -51,7 +43,7 @@ class parameter_server_service_impl final : public ParameterServer::Service {
       return Status::OK;
     }
 
-    Status ServeParameters(ServerContext* context, const PullRequest* request, ParameterUpdate* response) override {
+    Status PullParameters(ServerContext* context, const parameter_server::PullRequest* request, parameter_server::ParameterUpdate* response) override {
       auto params = ps_.serve_parameters(request->iteration());
       
       int32_t workers_received = 0;
@@ -61,7 +53,7 @@ class parameter_server_service_impl final : public ParameterServer::Service {
       response->set_ready(ready);
       
       for (const auto& t : params) {
-        Tensor* proto_tensor = response->add_parameters();
+        parameter_server::Tensor* proto_tensor = response->add_parameters();
         proto_tensor->set_name(t.name);
         for (int32_t dim : t.shape) {
           proto_tensor->add_shape(dim);
@@ -75,7 +67,7 @@ class parameter_server_service_impl final : public ParameterServer::Service {
       return Status::OK;
     }
 
-    Status CheckSyncStatus(ServerContext* context, const SyncStatusRequest* request, SyncStatusResponse* response) override {
+    Status CheckSyncStatus(ServerContext* context, const parameter_server::SyncStatusRequest* request, parameter_server::SyncStatusResponse* response) override {
       int32_t workers_received = 0;
       bool ready = ps_.check_sync_status(request->iteration(), workers_received);
       

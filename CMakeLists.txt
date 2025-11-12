@@ -80,11 +80,22 @@ endforeach()
 add_executable(parameter_server
   src/parameter_server.cpp
   src/parameter_server_service.cpp
-  src/main.cpp
+  src/parameter_main.cpp
   ${PROTO_GENERATED_SRCS}
 )
 
 target_link_libraries(parameter_server
+  protobuf::libprotobuf
+  gRPC::grpc++
+  Threads::Threads
+)
+
+# Worker library (to populate compile_commands and allow reuse)
+add_library(worker STATIC
+  src/worker.cpp
+  ${PROTO_GENERATED_SRCS}
+)
+target_link_libraries(worker
   protobuf::libprotobuf
   gRPC::grpc++
   Threads::Threads
