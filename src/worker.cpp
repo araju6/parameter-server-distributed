@@ -2,8 +2,11 @@
 
 #include <grpcpp/grpcpp.h>
 #include "parameter_server.grpc.pb.h"
+#include "coordinator.grpc.pb.h"
 #include <thread>
 #include <chrono>
+#include <functional>
+#include <cmath>
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -16,6 +19,13 @@ using parameter_server::ParameterUpdate;
 using parameter_server::Tensor;
 using parameter_server::SyncStatusRequest;
 using parameter_server::SyncStatusResponse;
+using coordinator::Coordinator;
+using coordinator::WorkerInfo;
+using coordinator::RegisterResponse;
+using coordinator::ListWorkersRequest;
+using coordinator::ListWorkersResponse;
+using coordinator::GetPSAddressRequest;
+using coordinator::GetPSAddressResponse;
 
 namespace {
 std::vector<Tensor> to_proto(const std::vector<TensorLite>& ts) {
@@ -47,7 +57,112 @@ std::vector<TensorLite> from_proto(const google::protobuf::RepeatedPtrField<Tens
 }
 }  // namespace
 
-Worker::Worker(int worker_id, const std::string& ps_address): worker_id_(worker_id), ps_address_(ps_address) {}
+Worker::Worker(int worker_id, const std::string& coordinator_address, const std::string& worker_address, int32_t worker_port)
+  : worker_id_(worker_id), coordinator_address_(coordinator_address), 
+    worker_address_(worker_address), worker_port_(worker_port), initialized_(false) {
+}
+
+bool Worker::initialize() {
+  if (initialized_) return true;
+  
+  if (!discover_parameter_server()) {
+    return false;
+  }
+  
+  if (!register_with_coordinator()) {
+    return false;
+  }
+  
+  initialized_ = true;
+  return true;
+}
+
+bool Worker::query_with_retry(const std::function<bool()>& query_func, int max_retries) {
+  for (int attempt = 0; attempt < max_retries; ++attempt) {
+    if (query_func()) {
+      return true;
+    }
+    
+    int backoff_ms = static_cast<int>(std::pow(2, attempt) * 100);
+    std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+  }
+  return false;
+}
+
+bool Worker::discover_parameter_server() {
+  return query_with_retry([this]() {
+    auto channel = grpc::CreateChannel(coordinator_address_, grpc::InsecureChannelCredentials());
+    std::unique_ptr<Coordinator::Stub> stub = Coordinator::NewStub(channel);
+    
+    ClientContext ctx;
+    GetPSAddressRequest req;
+    GetPSAddressResponse resp;
+    Status s = stub->GetParameterServerAddress(&ctx, req, &resp);
+    
+    if (s.ok()) {
+      ps_address_ = resp.address() + ":" + std::to_string(resp.port());
+      return true;
+    }
+    return false;
+  });
+}
+
+bool Worker::register_with_coordinator() {
+  return query_with_retry([this]() {
+    auto channel = grpc::CreateChannel(coordinator_address_, grpc::InsecureChannelCredentials());
+    std::unique_ptr<Coordinator::Stub> stub = Coordinator::NewStub(channel);
+    
+    ClientContext ctx;
+    WorkerInfo req;
+    req.set_worker_id(worker_id_);
+    if (!worker_address_.empty()) {
+      req.set_address(worker_address_);
+    } else {
+      req.set_address("localhost");
+    }
+    req.set_port(worker_port_);
+    req.set_hostname("worker-" + std::to_string(worker_id_));
+    
+    RegisterResponse resp;
+    Status s = stub->RegisterWorker(&ctx, req, &resp);
+    
+    if (s.ok() && resp.success()) {
+      if (!ps_address_.empty() && ps_address_ != resp.parameter_server_address()) {
+        ps_address_ = resp.parameter_server_address();
+      }
+      return true;
+    }
+    return false;
+  });
+}
+
+std::vector<std::string> Worker::discover_peer_workers() {
+  std::vector<std::string> peers;
+  
+  query_with_retry([this, &peers]() {
+    auto channel = grpc::CreateChannel(coordinator_address_, grpc::InsecureChannelCredentials());
+    std::unique_ptr<Coordinator::Stub> stub = Coordinator::NewStub(channel);
+    
+    ClientContext ctx;
+    ListWorkersRequest req;
+    ListWorkersResponse resp;
+    Status s = stub->ListWorkers(&ctx, req, &resp);
+    
+    if (s.ok()) {
+      peers.clear();
+      for (const auto& worker : resp.workers()) {
+        if (worker.worker_id() != worker_id_) {
+          std::string addr = worker.address() + ":" + std::to_string(worker.port());
+          peers.push_back(addr);
+        }
+      }
+      return true;
+    }
+    return false;
+  });
+  
+  return peers;
+}
 
 std::vector<TensorLite> Worker::pull_parameters(int iteration) {
   auto channel = grpc::CreateChannel(ps_address_, grpc::InsecureChannelCredentials());
