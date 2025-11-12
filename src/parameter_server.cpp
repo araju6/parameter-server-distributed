@@ -21,9 +21,17 @@ bool ParameterServerCore::receive_gradients(int32_t worker_id, int32_t iteration
   }
   
   auto& state = iteration_states_[iteration];
+  
+  if (state.aggregated) {
+    return true;
+  }
+  
+  bool is_new_worker = (state.worker_gradients.find(worker_id) == state.worker_gradients.end());
   state.worker_gradients[worker_id] = gradients;
   
-  if (state.worker_gradients.size() == static_cast<size_t>(total_workers_)) {
+  size_t current_count = state.worker_gradients.size();
+  
+  if (current_count == static_cast<size_t>(total_workers_)) {
     std::vector<tensor> aggregated;
     
     for (size_t i = 0; i < gradients.size(); ++i) {

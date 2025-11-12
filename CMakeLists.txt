@@ -100,3 +100,14 @@ target_link_libraries(worker
   gRPC::grpc++
   Threads::Threads
 )
+
+# Worker executable
+add_executable(worker_main
+  src/worker_main.cpp
+)
+target_link_libraries(worker_main
+  worker
+  protobuf::libprotobuf
+  gRPC::grpc++
+  Threads::Threads
+)

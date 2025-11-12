@@ -14,7 +14,7 @@ class parameter_server_service_impl final : public parameter_server::ParameterSe
   public:
     parameter_server_service_impl(int total_workers): ps_(total_workers) {}
 
-    Status PushGradients(ServerContext* context, const parameter_server::GradientUpdate* request, parameter_server::PushResponse* response) override {
+    Status ReceiveGradients(ServerContext* context, const parameter_server::GradientUpdate* request, parameter_server::PushResponse* response) override {
       std::vector<tensor> gradients;
       
       for (const auto& proto_tensor : request->gradients()) {
@@ -43,7 +43,7 @@ class parameter_server_service_impl final : public parameter_server::ParameterSe
       return Status::OK;
     }
 
-    Status PullParameters(ServerContext* context, const parameter_server::PullRequest* request, parameter_server::ParameterUpdate* response) override {
+    Status ServeParameters(ServerContext* context, const parameter_server::PullRequest* request, parameter_server::ParameterUpdate* response) override {
       auto params = ps_.serve_parameters(request->iteration());
       
       int32_t workers_received = 0;

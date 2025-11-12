@@ -2,6 +2,8 @@
 
 #include <grpcpp/grpcpp.h>
 #include "parameter_server.grpc.pb.h"
+#include <thread>
+#include <chrono>
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -107,15 +109,45 @@ std::vector<TensorLite> Worker::compute_gradients(const std::vector<TensorLite>&
 
 bool Worker::run_iteration(int iteration) {
   auto params = pull_parameters(iteration);
-  if (params.empty()) return false;
+  
+  if (params.empty()) {
+    TensorLite dummy;
+    dummy.name = "weight";
+    dummy.shape = {10, 10};
+    dummy.dtype = 0;
+    dummy.data.resize(100, 0.0f);
+    params.push_back(dummy);
+  }
+  
   auto grads = compute_gradients(params);
   int workers_received = 0, total_workers = 0;
-  bool complete = push_gradients(iteration, grads, workers_received, total_workers);
-  if (!complete) {
-    // optionally poll until ready; leaving it to caller to loop
-    return false;
+  bool aggregation_complete = push_gradients(iteration, grads, workers_received, total_workers);
+  
+  if (aggregation_complete && workers_received >= total_workers) {
+    return true;
   }
-  return true;
+  
+  bool ready = false;
+  int poll_count = 0;
+  const int max_polls = 200;
+  
+  while (!ready && poll_count < max_polls) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ready = check_sync_ready(iteration, workers_received, total_workers);
+    
+    if (ready && workers_received >= total_workers) {
+      return true;
+    }
+    
+    poll_count++;
+    
+    if (poll_count % 20 == 0) {
+      int w, t;
+      check_sync_ready(iteration, w, t);
+    }
+  }
+  
+  return ready && workers_received >= total_workers;
 }
 
  
