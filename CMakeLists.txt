@@ -51,6 +51,7 @@ include_directories(${CMAKE_BINARY_DIR})
 # Generate proto files
 set(PROTO_FILES
   proto/parameter_server.proto
+  proto/coordinator.proto
 )
 
 foreach(PROTO_FILE ${PROTO_FILES})
@@ -107,6 +108,20 @@ add_executable(worker_main
 )
 target_link_libraries(worker_main
   worker
+  protobuf::libprotobuf
+  gRPC::grpc++
+  Threads::Threads
+)
+
+# Coordinator executable
+add_executable(coordinator
+  src/coordinator.cpp
+  src/coordinator_service.cpp
+  src/coordinator_main.cpp
+  ${PROTO_GENERATED_SRCS}
+)
+
+target_link_libraries(coordinator
   protobuf::libprotobuf
   gRPC::grpc++
   Threads::Threads
