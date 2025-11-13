@@ -31,7 +31,7 @@ bool ParameterServerCore::receive_gradients(int32_t worker_id, int32_t iteration
   
   size_t current_count = state.worker_gradients.size();
   
-  if (current_count == static_cast<size_t>(total_workers_)) {
+  if (current_count >= static_cast<size_t>(total_workers_)) {
     std::vector<tensor> aggregated;
     
     for (size_t i = 0; i < gradients.size(); ++i) {
@@ -51,8 +51,9 @@ bool ParameterServerCore::receive_gradients(int32_t worker_id, int32_t iteration
         }
       }
       
+      int32_t actual_workers = static_cast<int32_t>(current_count);
       for (size_t j = 0; j < data_size; ++j) {
-        agg_tensor.data[j] /= total_workers_;
+        agg_tensor.data[j] /= actual_workers;
       }
       
       aggregated.push_back(agg_tensor);

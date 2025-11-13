@@ -90,6 +90,11 @@ bool Worker::initialize() {
   return true;
 }
 
+bool Worker::reconnect() {
+  initialized_ = false;
+  return initialize();
+}
+
 bool Worker::query_with_retry(const std::function<bool()>& query_func, int max_retries) {
   for (int attempt = 0; attempt < max_retries; ++attempt) {
     if (query_func()) {
@@ -262,49 +267,78 @@ std::vector<TensorLite> Worker::compute_gradients(const std::vector<TensorLite>&
 bool Worker::run_iteration(int iteration) {
   current_status_ = 1;
   
-  auto params = pull_parameters(iteration);
+  int retry_count = 0;
+  const int max_retries = 3;
   
-  if (params.empty()) {
-    TensorLite dummy;
-    dummy.name = "weight";
-    dummy.shape = {10, 10};
-    dummy.dtype = 0;
-    dummy.data.resize(100, 0.0f);
-    params.push_back(dummy);
-  }
-  
-  auto grads = compute_gradients(params);
-  int workers_received = 0, total_workers = 0;
-  bool aggregation_complete = push_gradients(iteration, grads, workers_received, total_workers);
-  
-  if (aggregation_complete && workers_received >= total_workers) {
-    current_status_ = 0;
-    return true;
-  }
-  
-  bool ready = false;
-  int poll_count = 0;
-  const int max_polls = 200;
-  
-  while (!ready && poll_count < max_polls) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    ready = check_sync_ready(iteration, workers_received, total_workers);
+  while (retry_count < max_retries) {
+    auto params = pull_parameters(iteration);
     
-    if (ready && workers_received >= total_workers) {
+    if (params.empty() && retry_count < max_retries - 1) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      retry_count++;
+      continue;
+    }
+    
+    if (params.empty()) {
+      TensorLite dummy;
+      dummy.name = "weight";
+      dummy.shape = {10, 10};
+      dummy.dtype = 0;
+      dummy.data.resize(100, 0.0f);
+      params.push_back(dummy);
+    }
+    
+    auto grads = compute_gradients(params);
+    int workers_received = 0, total_workers = 0;
+    bool aggregation_complete = push_gradients(iteration, grads, workers_received, total_workers);
+    
+    if (!aggregation_complete && retry_count < max_retries - 1) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      retry_count++;
+      continue;
+    }
+    
+    if (aggregation_complete) {
       current_status_ = 0;
       return true;
     }
     
-    poll_count++;
+    bool ready = false;
+    int poll_count = 0;
+    const int max_polls = 200;
     
-    if (poll_count % 20 == 0) {
-      int w, t;
-      check_sync_ready(iteration, w, t);
+    while (!ready && poll_count < max_polls) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      ready = check_sync_ready(iteration, workers_received, total_workers);
+      
+      if (ready) {
+        current_status_ = 0;
+        return true;
+      }
+      
+      poll_count++;
+      
+      if (poll_count % 20 == 0) {
+        int w, t;
+        check_sync_ready(iteration, w, t);
+      }
+    }
+    
+    if (ready) {
+      current_status_ = 0;
+      return true;
+    }
+    
+    if (retry_count < max_retries - 1) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+      retry_count++;
+    } else {
+      break;
     }
   }
   
   current_status_ = 0;
-  return ready && workers_received >= total_workers;
+  return false;
 }
 
  

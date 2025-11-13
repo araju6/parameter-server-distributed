@@ -18,6 +18,7 @@ class Worker {
   Worker(int worker_id, const std::string& coordinator_address, const std::string& worker_address = "", int32_t worker_port = 0);
   
   bool initialize();
+  bool reconnect();
 
   // run a single sync iteration: pull -> compute -> push -> check
   bool run_iteration(int iteration);
