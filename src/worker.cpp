@@ -8,6 +8,10 @@
 #include <functional>
 #include <cmath>
 
+#ifdef HAVE_NCCL
+#include <cuda_runtime.h>
+#endif
+
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
@@ -63,8 +67,26 @@ std::vector<TensorLite> from_proto(const google::protobuf::RepeatedPtrField<Tens
 Worker::Worker(int worker_id, const std::string& coordinator_address, const std::string& worker_address, int32_t worker_port)
   : worker_id_(worker_id), coordinator_address_(coordinator_address), 
     worker_address_(worker_address), worker_port_(worker_port), initialized_(false),
-    running_(true), current_status_(0) {
+    running_(true), current_status_(0)
+#ifdef HAVE_NCCL
+    , nccl_manager_(nullptr), num_gpus_(0)
+#endif
+{
   heartbeat_thread_ = std::thread(&Worker::heartbeat_loop, this);
+  
+#ifdef HAVE_NCCL
+  num_gpus_ = detect_num_gpus();
+  if (num_gpus_ > 1) {
+    nccl_manager_ = new NCCLManager();
+    if (!nccl_manager_->initialize(num_gpus_)) {
+      delete nccl_manager_;
+      nccl_manager_ = nullptr;
+      num_gpus_ = 1;
+    }
+  } else {
+    num_gpus_ = 1;
+  }
+#endif
 }
 
 Worker::~Worker() {
@@ -72,6 +94,13 @@ Worker::~Worker() {
   if (heartbeat_thread_.joinable()) {
     heartbeat_thread_.join();
   }
+  
+#ifdef HAVE_NCCL
+  if (nccl_manager_) {
+    nccl_manager_->cleanup();
+    delete nccl_manager_;
+  }
+#endif
 }
 
 bool Worker::initialize() {
@@ -256,11 +285,17 @@ bool Worker::check_sync_ready(int iteration, int& workers_received, int& total_w
 }
 
 std::vector<TensorLite> Worker::compute_gradients(const std::vector<TensorLite>& params) {
-  // simple dummy gradient: same shape as params, filled with 0.01
   std::vector<TensorLite> grads = params;
   for (auto& t : grads) {
     for (auto& v : t.data) v = 0.01f;
   }
+  
+#ifdef HAVE_NCCL
+  if (num_gpus_ > 1 && nccl_manager_ && nccl_manager_->is_initialized()) {
+    return aggregate_gradients_multi_gpu(grads);
+  }
+#endif
+  
   return grads;
 }
 
@@ -340,5 +375,47 @@ bool Worker::run_iteration(int iteration) {
   current_status_ = 0;
   return false;
 }
+
+#ifdef HAVE_NCCL
+std::vector<TensorLite> Worker::aggregate_gradients_multi_gpu(const std::vector<TensorLite>& grads) {
+  if (!nccl_manager_ || !nccl_manager_->is_initialized() || num_gpus_ <= 1) {
+    return grads;
+  }
+  
+  std::vector<TensorLite> aggregated = grads;
+  
+  for (size_t tensor_idx = 0; tensor_idx < grads.size(); ++tensor_idx) {
+    const auto& grad = grads[tensor_idx];
+    size_t data_size = grad.data.size();
+    
+    std::vector<float*> gpu_buffers(num_gpus_);
+    for (int gpu = 0; gpu < num_gpus_; ++gpu) {
+      cudaSetDevice(gpu);
+      cudaMalloc(&gpu_buffers[gpu], data_size * sizeof(float));
+      cudaMemcpy(gpu_buffers[gpu], grad.data.data(), data_size * sizeof(float), cudaMemcpyHostToDevice);
+    }
+    
+    for (int gpu = 0; gpu < num_gpus_; ++gpu) {
+      cudaSetDevice(gpu);
+      nccl_manager_->allreduce_float(gpu_buffers[gpu], data_size, gpu);
+    }
+    
+    cudaSetDevice(0);
+    aggregated[tensor_idx].data.resize(data_size);
+    cudaMemcpy(aggregated[tensor_idx].data.data(), gpu_buffers[0], data_size * sizeof(float), cudaMemcpyDeviceToHost);
+    
+    for (size_t i = 0; i < data_size; ++i) {
+      aggregated[tensor_idx].data[i] /= num_gpus_;
+    }
+    
+    for (int gpu = 0; gpu < num_gpus_; ++gpu) {
+      cudaSetDevice(gpu);
+      cudaFree(gpu_buffers[gpu]);
+    }
+  }
+  
+  return aggregated;
+}
+#endif
 
  

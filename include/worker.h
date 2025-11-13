@@ -6,6 +6,11 @@
 #include <atomic>
 #include <thread>
 
+#ifdef HAVE_NCCL
+#include "nccl_manager.h"
+#include <cuda_runtime.h>
+#endif
+
 struct TensorLite {
   std::string name;
   std::vector<int32_t> shape;
@@ -37,6 +42,10 @@ class Worker {
   std::vector<TensorLite> compute_gradients(const std::vector<TensorLite>& params);
   bool push_gradients(int iteration, const std::vector<TensorLite>& grads, int& workers_received, int& total_workers);
   bool check_sync_ready(int iteration, int& workers_received, int& total_workers);
+  
+#ifdef HAVE_NCCL
+  std::vector<TensorLite> aggregate_gradients_multi_gpu(const std::vector<TensorLite>& grads);
+#endif
 
   int worker_id_;
   std::string coordinator_address_;
@@ -48,5 +57,10 @@ class Worker {
   std::thread heartbeat_thread_;
   std::atomic<bool> running_;
   std::atomic<int32_t> current_status_;
+  
+#ifdef HAVE_NCCL
+  NCCLManager* nccl_manager_;
+  int num_gpus_;
+#endif
 };
 

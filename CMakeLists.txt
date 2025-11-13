@@ -137,6 +137,17 @@ target_link_libraries(worker
   Threads::Threads
 )
 
+if(NCCL_FOUND AND CUDA_FOUND)
+  target_link_libraries(worker
+    nccl_manager
+  )
+  target_include_directories(worker PRIVATE
+    ${NCCL_INCLUDE_DIR}
+    ${CUDA_INCLUDE_DIRS}
+  )
+  target_compile_definitions(worker PRIVATE HAVE_NCCL)
+endif()
+
 # Worker executable
 add_executable(worker_main
   src/worker_main.cpp
