@@ -26,6 +26,9 @@ using coordinator::ListWorkersRequest;
 using coordinator::ListWorkersResponse;
 using coordinator::GetPSAddressRequest;
 using coordinator::GetPSAddressResponse;
+using coordinator::HeartbeatRequest;
+using coordinator::HeartbeatResponse;
+using coordinator::WorkerStatus;
 
 namespace {
 std::vector<Tensor> to_proto(const std::vector<TensorLite>& ts) {
@@ -59,7 +62,16 @@ std::vector<TensorLite> from_proto(const google::protobuf::RepeatedPtrField<Tens
 
 Worker::Worker(int worker_id, const std::string& coordinator_address, const std::string& worker_address, int32_t worker_port)
   : worker_id_(worker_id), coordinator_address_(coordinator_address), 
-    worker_address_(worker_address), worker_port_(worker_port), initialized_(false) {
+    worker_address_(worker_address), worker_port_(worker_port), initialized_(false),
+    running_(true), current_status_(0) {
+  heartbeat_thread_ = std::thread(&Worker::heartbeat_loop, this);
+}
+
+Worker::~Worker() {
+  running_ = false;
+  if (heartbeat_thread_.joinable()) {
+    heartbeat_thread_.join();
+  }
 }
 
 bool Worker::initialize() {
@@ -74,6 +86,7 @@ bool Worker::initialize() {
   }
   
   initialized_ = true;
+  current_status_ = 0;
   return true;
 }
 
@@ -164,6 +177,30 @@ std::vector<std::string> Worker::discover_peer_workers() {
   return peers;
 }
 
+void Worker::send_heartbeat() {
+  if (!initialized_) return;
+  
+  auto channel = grpc::CreateChannel(coordinator_address_, grpc::InsecureChannelCredentials());
+  std::unique_ptr<Coordinator::Stub> stub = Coordinator::NewStub(channel);
+  
+  ClientContext ctx;
+  HeartbeatRequest req;
+  req.set_worker_id(worker_id_);
+  req.set_status(static_cast<WorkerStatus>(current_status_.load()));
+  
+  HeartbeatResponse resp;
+  stub->Heartbeat(&ctx, req, &resp);
+}
+
+void Worker::heartbeat_loop() {
+  while (running_) {
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    if (initialized_) {
+      send_heartbeat();
+    }
+  }
+}
+
 std::vector<TensorLite> Worker::pull_parameters(int iteration) {
   auto channel = grpc::CreateChannel(ps_address_, grpc::InsecureChannelCredentials());
   std::unique_ptr<ParameterServer::Stub> stub = ParameterServer::NewStub(channel);
@@ -223,6 +260,8 @@ std::vector<TensorLite> Worker::compute_gradients(const std::vector<TensorLite>&
 }
 
 bool Worker::run_iteration(int iteration) {
+  current_status_ = 1;
+  
   auto params = pull_parameters(iteration);
   
   if (params.empty()) {
@@ -239,6 +278,7 @@ bool Worker::run_iteration(int iteration) {
   bool aggregation_complete = push_gradients(iteration, grads, workers_received, total_workers);
   
   if (aggregation_complete && workers_received >= total_workers) {
+    current_status_ = 0;
     return true;
   }
   
@@ -251,6 +291,7 @@ bool Worker::run_iteration(int iteration) {
     ready = check_sync_ready(iteration, workers_received, total_workers);
     
     if (ready && workers_received >= total_workers) {
+      current_status_ = 0;
       return true;
     }
     
@@ -262,6 +303,7 @@ bool Worker::run_iteration(int iteration) {
     }
   }
   
+  current_status_ = 0;
   return ready && workers_received >= total_workers;
 }
 
