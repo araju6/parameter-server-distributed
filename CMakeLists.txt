@@ -20,6 +20,41 @@ set(CMAKE_BINARY_DIR ${CMAKE_BINARY_DIR})
 find_package(gRPC REQUIRED)
 find_package(Threads REQUIRED)
 
+# Find CUDA
+find_package(CUDA QUIET)
+if(CUDA_FOUND)
+  enable_language(CUDA)
+  set(CMAKE_CUDA_STANDARD 17)
+endif()
+
+# Find NCCL
+find_path(NCCL_INCLUDE_DIR
+  NAMES nccl.h
+  PATHS
+    /usr/local/include
+    /usr/include
+    /opt/nccl/include
+    ${CMAKE_SOURCE_DIR}/third_party/nccl/include
+)
+
+find_library(NCCL_LIBRARY
+  NAMES nccl
+  PATHS
+    /usr/local/lib
+    /usr/lib
+    /usr/lib/x86_64-linux-gnu
+    /opt/nccl/lib
+    ${CMAKE_SOURCE_DIR}/third_party/nccl/lib
+)
+
+if(NCCL_INCLUDE_DIR AND NCCL_LIBRARY)
+  set(NCCL_FOUND TRUE)
+  message(STATUS "Found NCCL: ${NCCL_LIBRARY}")
+else()
+  set(NCCL_FOUND FALSE)
+  message(STATUS "NCCL not found - multi-GPU support will be disabled")
+endif()
+
 # Ensure Protobuf is available (gRPC should have found it, but we need the executable)
 if(NOT Protobuf_PROTOC_EXECUTABLE)
   find_package(Protobuf REQUIRED)
@@ -126,3 +161,23 @@ target_link_libraries(coordinator
   gRPC::grpc++
   Threads::Threads
 )
+
+# NCCL Manager library (for multi-GPU support)
+if(NCCL_FOUND AND CUDA_FOUND)
+  add_library(nccl_manager STATIC
+    src/nccl_manager.cpp
+  )
+  
+  target_include_directories(nccl_manager PRIVATE
+    ${NCCL_INCLUDE_DIR}
+    ${CUDA_INCLUDE_DIRS}
+  )
+  
+  target_link_libraries(nccl_manager
+    ${NCCL_LIBRARY}
+    ${CUDA_LIBRARIES}
+    ${CUDA_CUDART_LIBRARY}
+  )
+  
+  target_compile_definitions(nccl_manager PRIVATE HAVE_NCCL)
+endif()
