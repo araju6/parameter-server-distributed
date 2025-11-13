@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <numeric>
+#include <fstream>
+#include <iostream>
+#include <sstream>
 
 ParameterServerCore::ParameterServerCore(int total_workers) : total_workers_(total_workers), current_iteration_(0) {}
 
@@ -104,5 +107,83 @@ bool ParameterServerCore::check_sync_status(int32_t iteration, int32_t& workers_
   
   workers_received = static_cast<int32_t>(it->second.worker_gradients.size());
   return it->second.aggregated;
+}
+
+bool ParameterServerCore::save_checkpoint(int32_t epoch, const std::string& path) {
+  std::lock_guard<std::mutex> lock(params_mutex_);
+  
+  std::ofstream file(path, std::ios::binary);
+  if (!file.is_open()) {
+    return false;
+  }
+  
+  file.write(reinterpret_cast<const char*>(&epoch), sizeof(int32_t));
+  file.write(reinterpret_cast<const char*>(&current_iteration_), sizeof(int32_t));
+  
+  size_t num_tensors = parameters_.size();
+  file.write(reinterpret_cast<const char*>(&num_tensors), sizeof(size_t));
+  
+  for (const auto& t : parameters_) {
+    size_t name_len = t.name.size();
+    file.write(reinterpret_cast<const char*>(&name_len), sizeof(size_t));
+    file.write(t.name.c_str(), name_len);
+    
+    size_t shape_size = t.shape.size();
+    file.write(reinterpret_cast<const char*>(&shape_size), sizeof(size_t));
+    file.write(reinterpret_cast<const char*>(t.shape.data()), shape_size * sizeof(int32_t));
+    
+    file.write(reinterpret_cast<const char*>(&t.dtype), sizeof(int32_t));
+    
+    size_t data_size = t.data.size();
+    file.write(reinterpret_cast<const char*>(&data_size), sizeof(size_t));
+    file.write(reinterpret_cast<const char*>(t.data.data()), data_size * sizeof(float));
+  }
+  
+  file.close();
+  return true;
+}
+
+bool ParameterServerCore::load_checkpoint(const std::string& path, int32_t& epoch) {
+  std::lock_guard<std::mutex> lock(params_mutex_);
+  
+  std::ifstream file(path, std::ios::binary);
+  if (!file.is_open()) {
+    return false;
+  }
+  
+  file.read(reinterpret_cast<char*>(&epoch), sizeof(int32_t));
+  file.read(reinterpret_cast<char*>(&current_iteration_), sizeof(int32_t));
+  
+  size_t num_tensors = 0;
+  file.read(reinterpret_cast<char*>(&num_tensors), sizeof(size_t));
+  
+  parameters_.clear();
+  parameters_.reserve(num_tensors);
+  
+  for (size_t i = 0; i < num_tensors; ++i) {
+    tensor t;
+    
+    size_t name_len = 0;
+    file.read(reinterpret_cast<char*>(&name_len), sizeof(size_t));
+    t.name.resize(name_len);
+    file.read(&t.name[0], name_len);
+    
+    size_t shape_size = 0;
+    file.read(reinterpret_cast<char*>(&shape_size), sizeof(size_t));
+    t.shape.resize(shape_size);
+    file.read(reinterpret_cast<char*>(t.shape.data()), shape_size * sizeof(int32_t));
+    
+    file.read(reinterpret_cast<char*>(&t.dtype), sizeof(int32_t));
+    
+    size_t data_size = 0;
+    file.read(reinterpret_cast<char*>(&data_size), sizeof(size_t));
+    t.data.resize(data_size);
+    file.read(reinterpret_cast<char*>(t.data.data()), data_size * sizeof(float));
+    
+    parameters_.push_back(t);
+  }
+  
+  file.close();
+  return true;
 }
 

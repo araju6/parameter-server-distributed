@@ -23,6 +23,8 @@ using parameter_server::ParameterUpdate;
 using parameter_server::Tensor;
 using parameter_server::SyncStatusRequest;
 using parameter_server::SyncStatusResponse;
+using parameter_server::LoadCheckpointRequest;
+using parameter_server::LoadCheckpointResponse;
 using coordinator::Coordinator;
 using coordinator::WorkerInfo;
 using coordinator::RegisterResponse;
@@ -282,6 +284,33 @@ bool Worker::check_sync_ready(int iteration, int& workers_received, int& total_w
   workers_received = resp.workers_received();
   total_workers = resp.total_workers();
   return resp.ready();
+}
+
+bool Worker::load_checkpoint_from_server(const std::string& checkpoint_path, int32_t& epoch) {
+  if (!initialized_ && ps_address_.empty()) {
+    // Try to discover parameter server if not initialized
+    if (!discover_parameter_server()) {
+      return false;
+    }
+  }
+  
+  auto channel = grpc::CreateChannel(ps_address_, grpc::InsecureChannelCredentials());
+  std::unique_ptr<ParameterServer::Stub> stub = ParameterServer::NewStub(channel);
+
+  ClientContext ctx;
+  LoadCheckpointRequest req;
+  req.set_path(checkpoint_path);
+  LoadCheckpointResponse resp;
+  Status s = stub->LoadCheckpoint(&ctx, req, &resp);
+  
+  if (!s.ok() || !resp.success()) {
+    return false;
+  }
+  
+  epoch = resp.epoch();
+  // Parameters are loaded into the parameter server, so they'll be available
+  // on the next pull_parameters call. We don't need to store them locally.
+  return true;
 }
 
 std::vector<TensorLite> Worker::compute_gradients(const std::vector<TensorLite>& params) {

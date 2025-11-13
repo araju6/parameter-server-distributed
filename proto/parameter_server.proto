@@ -6,6 +6,8 @@ service ParameterServer {
   rpc ReceiveGradients(GradientUpdate) returns (PushResponse);
   rpc ServeParameters(PullRequest) returns (ParameterUpdate);
   rpc CheckSyncStatus(SyncStatusRequest) returns (SyncStatusResponse);
+  rpc SaveCheckpoint(SaveCheckpointRequest) returns (SaveCheckpointResponse);
+  rpc LoadCheckpoint(LoadCheckpointRequest) returns (LoadCheckpointResponse);
 }
 
 message GradientUpdate {
@@ -50,4 +52,26 @@ message SyncStatusResponse {
   bool ready = 2;
   int32 workers_received = 3;
   int32 total_workers = 4;
+}
+
+message SaveCheckpointRequest {
+  int32 epoch = 1;
+  string path = 2;
+}
+
+message SaveCheckpointResponse {
+  bool success = 1;
+  string message = 2;
+  string checkpoint_path = 3;
+}
+
+message LoadCheckpointRequest {
+  string path = 1;
+}
+
+message LoadCheckpointResponse {
+  bool success = 1;
+  string message = 2;
+  int32 epoch = 3;
+  repeated Tensor parameters = 4;
 }

@@ -8,18 +8,33 @@ int main(int argc, char** argv) {
   int iterations = 1;
   std::string worker_addr = "";
   int32_t worker_port = 0;
+  std::string checkpoint_path = "";
 
   if (argc > 1) coordinator_addr = argv[1];
   if (argc > 2) worker_id = std::stoi(argv[2]);
   if (argc > 3) iterations = std::stoi(argv[3]);
   if (argc > 4) worker_addr = argv[4];
   if (argc > 5) worker_port = std::stoi(argv[5]);
+  if (argc > 6) checkpoint_path = argv[6];
 
   Worker w(worker_id, coordinator_addr, worker_addr, worker_port);
   
   if (!w.initialize()) {
     std::cerr << "worker " << worker_id << " failed to initialize" << std::endl;
     return 1;
+  }
+  
+  // Load checkpoint if specified
+  if (!checkpoint_path.empty()) {
+    int32_t checkpoint_epoch = 0;
+    if (w.load_checkpoint_from_server(checkpoint_path, checkpoint_epoch)) {
+      std::cout << "worker " << worker_id << " loaded checkpoint from " << checkpoint_path 
+                << " (epoch " << checkpoint_epoch << ")" << std::endl;
+    } else {
+      std::cerr << "worker " << worker_id << " failed to load checkpoint from " 
+                << checkpoint_path << std::endl;
+      // Continue anyway - worker will start from scratch
+    }
   }
   
   for (int it = 0; it < iterations; ++it) {

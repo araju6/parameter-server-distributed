@@ -5,6 +5,7 @@
 int main(int argc, char** argv) {
   std::string server_address = "0.0.0.0:50051";
   int total_workers = 2;
+  int checkpoint_interval = 10;
   
   if (argc > 1) {
     server_address = argv[1];
@@ -12,8 +13,11 @@ int main(int argc, char** argv) {
   if (argc > 2) {
     total_workers = std::stoi(argv[2]);
   }
+  if (argc > 3) {
+    checkpoint_interval = std::stoi(argv[3]);
+  }
   
-  run_server(server_address, total_workers);
+  run_server(server_address, total_workers, checkpoint_interval);
   return 0;
 }
 

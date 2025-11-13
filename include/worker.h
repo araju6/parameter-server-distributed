@@ -28,6 +28,10 @@ class Worker {
   // run a single sync iteration: pull -> compute -> push -> check
   bool run_iteration(int iteration);
   
+  // Load checkpoint from parameter server
+  // Returns true if successful, and sets epoch to the loaded checkpoint epoch
+  bool load_checkpoint_from_server(const std::string& checkpoint_path, int32_t& epoch);
+  
   ~Worker();
 
  private:

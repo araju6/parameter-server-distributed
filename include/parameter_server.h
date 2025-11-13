@@ -30,7 +30,11 @@ class ParameterServerCore {
     
     bool check_sync_status(int32_t iteration, int32_t& workers_received);
     
+    bool save_checkpoint(int32_t epoch, const std::string& path);
+    bool load_checkpoint(const std::string& path, int32_t& epoch);
+    
     int get_total_workers() const { return total_workers_; }
+    int32_t get_current_iteration() const { return current_iteration_; }
 
   private:
     void aggregate_gradients(const std::vector<tensor>& gradients);
