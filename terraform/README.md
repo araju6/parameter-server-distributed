@@ -69,3 +69,20 @@ All instances use the default VPC and are in the same security group allowing:
 - Binaries need to be copied to instances separately (see deployment script)
 - Instances use private IPs for inter-instance communication
 
+## Elastic Scaling
+
+The `worker_count` variable can be changed to scale workers up or down:
+
+```bash
+# Scale to 5 workers
+terraform apply -var="worker_count=5"
+
+# Scale to 2 workers
+terraform apply -var="worker_count=2"
+```
+
+**Note:** After changing worker count, you need to:
+1. Restart the parameter server with the new worker count
+2. New workers will automatically register with the coordinator
+3. Use `scripts/scale_workers.sh` for automated scaling (recommended)
+

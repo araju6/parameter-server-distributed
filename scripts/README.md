@@ -93,3 +93,36 @@ cd terraform
 terraform destroy
 ```
 
+## Elastic Scaling
+
+### `scale_workers.sh`
+
+Script to add or remove workers from the cluster. The coordinator automatically handles worker registration, and the parameter server adapts to the new worker count.
+
+**Usage:**
+```bash
+# Scale up to 5 workers
+KEY_FILE=/path/to/key.pem ./scripts/scale_workers.sh up 5
+
+# Scale down to 2 workers
+KEY_FILE=/path/to/key.pem ./scripts/scale_workers.sh down 2
+```
+
+**How it works:**
+- **Scale Up**: Creates new worker instances, copies binaries, starts workers, and updates parameter server worker count
+- **Scale Down**: Stops excess workers, updates Terraform state, and updates parameter server worker count
+- Coordinator automatically removes stale workers via heartbeat timeout (already implemented)
+
+**Notes:**
+- Workers are added/removed from the end of the list
+- Parameter server is restarted with new worker count
+- Coordinator handles worker discovery automatically
+- Cannot scale down to 0 workers (minimum 1)
+
+**Alternative: Manual Scaling via Terraform**
+```bash
+cd terraform
+terraform apply -var="worker_count=5"
+# Then manually restart parameter server with new count
+```
+
