@@ -1,0 +1,8 @@
+aws_region            = "us-east-1"
+ami_id               = "ami-xxxxxxxxxxxxxxxxx"  # Ubuntu 22.04 with NVIDIA driver pre-installed
+key_pair_name        = "your-key-pair-name"
+coordinator_instance_type = "t3.medium"
+ps_instance_type     = "g4dn.xlarge"
+worker_instance_type  = "g4dn.xlarge"
+worker_count         = 3
+
